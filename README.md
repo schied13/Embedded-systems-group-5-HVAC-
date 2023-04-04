@@ -1,2 +1,3 @@
 # Embeeded-systems-group-5-HVAC-
-D
+This Goal of this project is to design a HVAC control system 
+
