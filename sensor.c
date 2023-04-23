@@ -20,15 +20,25 @@ void adcConfig();
 void wifiConfig();
 void uartConfig();
 void gpioConfig();
-
+char temp = 0;
 
 
 //Main function
 int main(){
 
+
+    WDTCTL = WDTPW | WDTHOLD;
+
+
+    gpioConfig();
+    uartConfig();
+    wifiConfig();
+    adcConfig();
     while(1){
 
-        //@TODO Temperature Conversion From ADC Value
+
+        ADCCTL0 |= ADCENC | ADCSC;
+        __bis_SR_register(GIE | LPM0_bits);
 
 
     }
@@ -44,6 +54,16 @@ void adcConfig(){
     //Configure ADC A4
     P1SEL1 |= BIT4;
     P1SEL0 |= BIT4;
+
+    ADCCTL0 &= ~ADCSHT; //Clear ADCSHT
+    ADCCTL0 |= ADCSHT_2;// Set sample and hold time to 16 cycles
+    ADCCTL0 |= ADCON;   // turn ADC on
+
+    ADCCTL1 |= ADCSSEL_SMCLK;
+    ADCCTL1 |= ADCSHP;
+
+    ADCMCTL0 |= ADCINCH_4; // select A4 as ADC
+    ADCIE |= ADCIE0;
 
 }
 
@@ -85,8 +105,22 @@ void uartConfig(){
 
 //@TODO GPIO Configure
 void gpioConfig(){
-
+    //configr
 
 }
 
+//@TODO Send data to launchpad
+void senData(val){
 
+}
+
+#pragma vector=ADC_VECTOR
+__interrupt void ADC_ISR(void){
+
+    temp = ADCMEM0; //Read ADC value
+    __bic_SR_register_on_exit(LPM0_bits);//Wake up CPU
+    senData(temp);//Send data to Launch pad
+
+
+
+}
