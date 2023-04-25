@@ -13,14 +13,16 @@
 * GPIO - Pin
 * TimerB0 - UP Mode, CCR1 for PWM Control, controls Pin 6.0
 */
-
+#include <msp430.h>
+#include <math.h>
 
 //function prototyping
 void adcConfig();
 void wifiConfig();
 void uartConfig();
 void gpioConfig();
-char temp = 0;
+void conTemp(int val);
+char temp = 0x00;
 
 
 //Main function
@@ -34,6 +36,14 @@ int main(){
     uartConfig();
     wifiConfig();
     adcConfig();
+
+    PM5CTL0 &= ~LOCKLPM5;
+
+    //Take UART out of Reset
+    UCA1CTLW0 &= ~UCSWRST;
+
+    //5. enable interrupts
+
     while(1){
 
 
@@ -61,6 +71,9 @@ void adcConfig(){
 
     ADCCTL1 |= ADCSSEL_SMCLK;
     ADCCTL1 |= ADCSHP;
+
+    ADCCTL2 &= ~BIT4;//clear LSB of ADCRES
+    ADCCTL2 |= ADCRES_0;//set resolution to 8 bit
 
     ADCMCTL0 |= ADCINCH_4; // select A4 as ADC
     ADCIE |= ADCIE0;
@@ -90,13 +103,13 @@ void uartConfig(){
     UCA1MCTLW |= 0xD600;
 
     //configure P1.7 as Tx
-    P1SEL0 &= ~BIT7;
-    P1SEL1 |= BIT7;
+    P1SEL1 &= ~BIT7;
+    P1SEL0 |= BIT7;
 
 
     //configure P1.6 as Rx
-    P1SEL0 &= ~BIT6;
-    P1SEL1 |= BIT6;
+    P1SEL1 &= ~BIT6;
+    P1SEL0 |= BIT6;
 
 
 }
@@ -105,22 +118,30 @@ void uartConfig(){
 
 //@TODO GPIO Configure
 void gpioConfig(){
-    //configr
+    //configure
 
 }
 
 //@TODO Send data to launchpad
-void senData(val){
-
+void conTemp(double val){
+   temp = ((val/(227*pow(10,-6)))-273.15)*1.8 +32;// voltage to fahrenheit conversion
+    //casting value to a char
 }
 
 #pragma vector=ADC_VECTOR
 __interrupt void ADC_ISR(void){
 
-    temp = ADCMEM0; //Read ADC value
+    double adcVal = ADCMEM0; //Read ADC value
     __bic_SR_register_on_exit(LPM0_bits);//Wake up CPU
-    senData(temp);//Send data to Launch pad
+    conTemp(adcVal);
+    UCAIE |= UCTXCPTIE;//enable transmission interrupt request
+    UCAIFG &= ~UCTXPTIFG;// clear UCTXCPTIFG flag
+    UCA1TXBUF = temp;
 
-
-
+}
+#pragma vector = EUSCI_A1_VECTOR// UART Transmission Interrupt Vector
+__interrupt void ISR_EUSCI_A1(void)
+{
+    UCA1IE &= ~UCTXCPTIE;//clearing interrupt enable an interrupt flag
+    UCA1IFG &= ~UCTXCPTIFG;//since there is only one character that needs to be shifted out this flag can be immediately cleared
 }

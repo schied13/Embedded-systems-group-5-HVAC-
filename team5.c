@@ -12,6 +12,7 @@
 * GPIO -
 * TimerB0 - UP Mode, CCR1 for PWM Control, controls Pin 6.0
 */
+#include <msp430.h>
 
 //Function Prototyping
 void gpioConfig();
