@@ -1,28 +1,20 @@
-/**********************************
-* Smart HVAC System Launchpad Program
-*
-* Takes input Voltage from LM334(P1.1) into ADC A1
-* Configures WiFi Module to TX mode
-* Sends Data from UART to WiFi Module
-*
-* Author: Johnathan Schiede, Eddie Rosa, Omar Bedewy
-* Version: 1.0
-*
-* Peripherals Used:
-* ADC12 - Channel 1 (Pin 1.1)
-* GPIO - Pin
-* TimerB0 - UP Mode, CCR1 for PWM Control, controls Pin 6.0
+/*
+* Group 5- Smart HVAC
+* Takes input from LM334 and sends an integer to sensor
+* LED and Fan handle is implemented here for demonstration purposes
+* 3/27/23
+* By Johnathan Schiede, Omar Bedewy, Edward Rosa
 */
 #include <msp430.h>
-#include <math.h>
+#include "math.h"
 
 //function prototyping
 void adcConfig();
-void wifiConfig();
+void gpioHandle();
 void uartConfig();
 void gpioConfig();
-void conTemp(int val);
-char temp = 0x00;
+void conTemp(double val);
+char temp = 100;
 
 
 //Main function
@@ -34,7 +26,6 @@ int main(){
 
     gpioConfig();
     uartConfig();
-    wifiConfig();
     adcConfig();
 
     PM5CTL0 &= ~LOCKLPM5;
@@ -46,8 +37,9 @@ int main(){
 
     while(1){
 
+        gpioHandle();
+        ADCCTL0 |= ADCENC | ADCSC;//enable and start conversion
 
-        ADCCTL0 |= ADCENC | ADCSC;
         __bis_SR_register(GIE | LPM0_bits);
 
 
@@ -69,38 +61,66 @@ void adcConfig(){
     ADCCTL0 |= ADCSHT_2;// Set sample and hold time to 16 cycles
     ADCCTL0 |= ADCON;   // turn ADC on
 
-    ADCCTL1 |= ADCSSEL_SMCLK;
+    ADCCTL1 |= ADCSSEL_2; //Select SMCLK
     ADCCTL1 |= ADCSHP;
-
+    ADCCTL1 |= BIT1;      //repeated samples select
     ADCCTL2 &= ~BIT4;//clear LSB of ADCRES
-    ADCCTL2 |= ADCRES_0;//set resolution to 8 bit
+    ADCCTL2 |= ADCRES_2;//set resolution to 8 bit
 
     ADCMCTL0 |= ADCINCH_4; // select A4 as ADC
-    ADCIE |= ADCIE0;
+    ADCIE |= ADCIE0;        //turn on ADC interrupt
 
 }
 
 
 
-//@TODO WIFI Configure
-void wifiConfig(){
-    //I dont even have an idea
-    //check datasheet
+void gpioHandle(){
+
+    if (temp < 70){
+        //Turn off fan and put RGB LED as Green
+        P4OUT &= ~BIT4;
+        P2OUT |= BIT5;
+        P3OUT &= ~BIT0;
+        P3OUT &= ~BIT2;
+      }
+
+    else if (temp >= 70 && temp< 75){
+        //turn off fan put RGB LED as Yellow
+          P4OUT |= BIT4;
+          P2OUT |= BIT5;
+          P3OUT &= ~BIT0;
+          P3OUT &= ~BIT2;
+     }
+
+    else if (temp >= 75 && temp <90){
+        //Put RGB LED As Red and turn fan off
+        P4OUT &= ~BIT4;
+        P2OUT &= ~BIT5;
+        P3OUT |= BIT0;
+        P3OUT |= BIT2;
+     }
+
+   else{
+       //put RGB LED as Blue
+        P4OUT |= BIT4;
+        P2OUT &= ~BIT5;
+        P3OUT &= ~BIT0;
+        P3OUT &= ~BIT2;
+     }
+
+
 }
-
-
-
 //@TODO UART Configure
 void uartConfig(){
 
     //Put eUSCI_A4 into SW reset
-    UCA1CTLW0 |= UCSWRST;
+    UCA0CTLW0 |= UCSWRST;
 
     //Configure eUSCI_A4
-    UCA1CTLW0 |= UCSSEL__SMCLK;
+    UCA0CTLW0 |= UCSSEL__SMCLK;
 
-    UCA1BRW = 8;
-    UCA1MCTLW |= 0xD600;
+    UCA0BRW = 8;
+    UCA0MCTLW |= 0xD600;
 
     //configure P1.7 as Tx
     P1SEL1 &= ~BIT7;
@@ -116,15 +136,27 @@ void uartConfig(){
 
 
 
-//@TODO GPIO Configure
 void gpioConfig(){
-    //configure
+
+    //Blue LED
+    P4OUT &= ~BIT4;
+    P4DIR |= BIT4;
+    //Green LED
+    P2OUT &= ~BIT5;
+    P2DIR |= BIT5;
+    //Red LED
+    P3OUT &= ~BIT0;
+    P3DIR |= BIT0;
+
+    //Fan
+    P3OUT &= ~BIT2;
+    P3DIR |= BIT2;
 
 }
 
 //@TODO Send data to launchpad
 void conTemp(double val){
-   temp = ((val/(227*pow(10,-6)))-273.15)*1.8 +32;// voltage to fahrenheit conversion
+   temp = ((val/.010)-273.15)*1.8 +32;// voltage to fahrenheit conversion
     //casting value to a char
 }
 
@@ -132,16 +164,19 @@ void conTemp(double val){
 __interrupt void ADC_ISR(void){
 
     double adcVal = ADCMEM0; //Read ADC value
+    adcVal = adcVal*.000805;
     __bic_SR_register_on_exit(LPM0_bits);//Wake up CPU
     conTemp(adcVal);
-    UCAIE |= UCTXCPTIE;//enable transmission interrupt request
-    UCAIFG &= ~UCTXPTIFG;// clear UCTXCPTIFG flag
-    UCA1TXBUF = temp;
+    UCA0IE |= UCTXCPTIE;//enable transmission interrupt request
+    UCA0IFG &= ~UCTXCPTIFG;// clear UCTXCPTIFG flag
+    UCA0TXBUF = temp;
 
 }
 #pragma vector = EUSCI_A1_VECTOR// UART Transmission Interrupt Vector
 __interrupt void ISR_EUSCI_A1(void)
 {
-    UCA1IE &= ~UCTXCPTIE;//clearing interrupt enable an interrupt flag
-    UCA1IFG &= ~UCTXCPTIFG;//since there is only one character that needs to be shifted out this flag can be immediately cleared
+    UCA0IE &= ~UCTXCPTIE;//clearing interrupt enable an interrupt flag
+    UCA0IFG &= ~UCTXCPTIFG;//since there is only one character that needs to be shifted out this flag can be immediately cleared
 }
+
+
